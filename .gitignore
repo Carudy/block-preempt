@@ -1,0 +1,12 @@
+MMM.md
+mtime_count.py
+MMMimg/*
+log/*
+!log/.gitkeep
+record/*
+mz.log
+
+process_logs/*
+*.db
+*.7z
+*.zip
