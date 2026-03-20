@@ -2,10 +2,21 @@
 
 ./clean.sh
 # Configuration variables - edit these as needed
-num_shards=2      # Number of shards (S0, S1, S2, S3)
-num_nodes=16       # Number of nodes per shard (N0, N1)
-malicious_num=1   # Maximum malicious nodes per shard
-test_file="20W.csv"  # Test file
+num_shards=2
+num_nodes=16
+malicious_num=1
+inject_speed=500
+enbale_bank=false
+
+if [ "$enable_bank" = "true" ]; then
+    echo "BANK enabled."
+    BANK_FLAG="-b"
+else
+    echo "Caravan mode."
+    BANK_FLAG=""
+fi
+
+test_file="20W.csv"
 
 echo "=== Starting Blockchain Shard Network ==="
 echo "Shards: $num_shards"
@@ -34,7 +45,7 @@ for ((s=0; s<num_shards; s++)); do
         echo "Starting $shard_id $node_id..."
 
         # Start node with exact command format from requirements
-        ./block_caravan_exe -S $num_shards -N $num_nodes -f $malicious_num -s $shard_id -n $node_id -t $test_file > "$log_file" 2>&1 &
+        ./block_caravan_exe -i $inject_speed $BANK_FLAG -S $num_shards -N $num_nodes -f $malicious_num -s $shard_id -n $node_id -t $test_file > "$log_file" 2>&1 &
 
         pid=$!
         node_pids+=($pid)
@@ -55,7 +66,7 @@ echo "Starting client/supervisor..."
 client_log="$log_dir/client.log"
 
 # Start client with -c flag as requested
-./block_caravan_exe -c -S $num_shards -N $num_nodes -t $test_file  > "$client_log" 2>&1 &
+./block_caravan_exe -i $inject_speed $BANK_FLAG -c -S $num_shards -N $num_nodes -t $test_file  > "$client_log" 2>&1 &
 
 client_pid=$!
 node_pids+=($client_pid)

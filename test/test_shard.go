@@ -24,6 +24,10 @@ var (
 	isClient      bool
 	// requestlog    *csv.Writer
 	EndTime int64
+
+	// for bank-sys
+	enableBank  bool
+	injectSpeed int
 )
 
 func Test_shard() {
@@ -35,9 +39,15 @@ func Test_shard() {
 	flag.StringVarP(&testFile, "testFile", "t", "", "path of the input test file")
 	flag.BoolVarP(&isClient, "client", "c", false, "whether this node is a client")
 
+	// Preempt
+	flag.BoolVarP(&enableBank, "enableBank", "b", false, "whether enable bank node")
+	flag.IntVarP(&injectSpeed, "injectSpeed", "i", 500, "inject speed")
+
 	flag.Parse()
 
 	params.RenewShardTable(shard_num, node_num)
+	params.Config.Inject_speed = injectSpeed
+	params.Config.Enable_bank = enableBank
 
 	if isClient {
 		if testFile == "" {

@@ -42,6 +42,8 @@ type ChainConfig struct {
 	OnlyOnce                 int    //1只迁移1次，否则设为1000000
 	Not_Lock_immediately     bool
 	RelayLock                bool
+	// Preempt
+	Enable_bank bool //是否启用银行节点
 }
 
 var (
@@ -120,6 +122,8 @@ var (
 		OnlyOnce:                 100,
 		Not_Lock_immediately:     true,
 		RelayLock:                false, // default: false
+		// preempt
+		Enable_bank: false, // default: false
 	}
 
 	Init_addrs          = []string{}

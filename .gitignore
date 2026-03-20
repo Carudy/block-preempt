@@ -7,6 +7,14 @@ record/*
 mz.log
 
 process_logs/*
-*.db
+*_db
 *.7z
 *.zip
+
+prompt.txt
+
+*_exe
+blockEmulator
+block_caravan_exe
+
+block_*_exe
