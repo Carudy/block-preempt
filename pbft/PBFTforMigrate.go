@@ -203,7 +203,7 @@ func (p *Pbft) SendOut(out map[string]int) {
 	for _, tx := range p.Node.CurChain.Tx_pool.Queue {
 
 		mlen := len(tx.Recipient)
-		for i := 0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 			// 如果sender是要出去的账户，且还不是后半，则收集
 			if shard, ok := out[hex.EncodeToString(tx.Sender)]; ok && !tx.IsRelay {
 				if outpool[shard] == nil {
@@ -350,6 +350,27 @@ func (p *Pbft) handleBalancesAndPendings(content []byte) {
 	}
 	inacc_count_lock.Unlock()
 
+}
+
+// [BANK SYSTEM] handleBankAggTX receives aggregated bank transactions from source shard
+func (p *Pbft) handleBankAggTX(content []byte) {
+	// Content contains: Addr, ShardID, Tx (aggregated transaction with Bank as sender)
+	type BankAggTX struct {
+		Addr    string
+		ShardID int
+		Tx      *core.Transaction2
+	}
+
+	bankAgg := new(BankAggTX)
+	err := json.Unmarshal(content, bankAgg)
+	if err != nil {
+		log.Panic(err)
+	}
+	fmt.Printf("\n[BANK] Received bank aggregated tx for account %s from shard %d\n", bankAgg.Addr, bankAgg.ShardID)
+
+	// Store in BankAggTX_Pool for execution when TXmig2 is processed
+	p.Node.CurChain.Tx_pool.AddBankAggTxs(bankAgg.Addr, []*core.Transaction2{bankAgg.Tx})
+	fmt.Printf("[BANK] Stored bank aggregated tx in pool for account %s\n", bankAgg.Addr)
 }
 
 func (p *Pbft) SendSure() {

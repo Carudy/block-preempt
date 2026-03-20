@@ -6,6 +6,7 @@ import (
 	"blockEmulator/utils"
 	"encoding/hex"
 	"fmt"
+
 	// "math/big"   // MMM 无用
 	"math/rand"
 	"sync"
@@ -70,6 +71,10 @@ type Tx_pool struct {
 
 	// 用来收集ANNOUNCE后有关迁入账户的relay交易，由Coming_Lock控制
 	Coming_TX_Pools map[string][]*Transaction2
+
+	// [BANK SYSTEM]      用来收集聚合后的银行交易（sender为Bank），由BankAggTX_Pools_Lock控制
+	BankAggTX_Pools      map[string][]*Transaction2
+	BankAggTX_Pools_Lock sync.Mutex
 }
 
 func NewTxPool() *Tx_pool {
@@ -81,6 +86,7 @@ func NewTxPool() *Tx_pool {
 		Outing_After_Announce_TX_Pools:  make(map[string][]*Transaction2),
 		Locking_TX_Pools:                make(map[string][]*Transaction2),
 		Coming_TX_Pools:                 make(map[string][]*Transaction2),
+		BankAggTX_Pools:                 make(map[string][]*Transaction2),
 	}
 	// heap.Init(&pool.Heap)
 
@@ -162,12 +168,10 @@ func (pool *Tx_pool) AddTxs(txs []*Transaction2) {
 	pool.Lock.Unlock()
 }
 
-
 // MMM 新增函数 用于从pool中随机选取交易，并删除这个交易
 func (pool *Tx_pool) MRandPick() (tx *Transaction2) {
 	index := rand.Intn(len(pool.Queue))
 	tx = pool.Queue[index]
-
 
 	// 从交易池中删除这个交易
 	// j := 0
@@ -188,7 +192,9 @@ func (pool *Tx_pool) MRandPick() (tx *Transaction2) {
 	}
 	pool.Queue = new_queue
 	return
+
 }
+
 // MMM 新函数 随机从pool中取一定数量的交易
 // func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transaction2, queueLen int) {
 // 	config := params.Config
@@ -199,7 +205,6 @@ func (pool *Tx_pool) MRandPick() (tx *Transaction2) {
 // 		tx_cnt = len(pool.Queue)
 // 	}
 // 	txs = make([]*Transaction2, 0)
-
 
 // 	for {
 // 		if tx_cnt == 0 {
@@ -303,7 +308,6 @@ func (pool *Tx_pool) MRandPick() (tx *Transaction2) {
 // 	return
 // }
 
-
 // MMM 旧函数，fifo，已弃用FetchTxs2PackOld
 func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transaction2, queueLen int) {
 	config := params.Config
@@ -325,7 +329,7 @@ func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transact
 
 		// MMMM 拆分处理
 		mlen := len(v.Recipient)
-		for i := 0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 			from, to := hex.EncodeToString(v.Sender), hex.EncodeToString(v.Recipient[i])
 
 			// 不是自己分片的交易,直接不管了
@@ -346,7 +350,7 @@ func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transact
 						v.LockTime = time.Now().UnixMilli()
 					}
 					v.SenLock = true
-					if config.Not_Lock_immediately && v.Sen_Suppose_on_chain==0{
+					if config.Not_Lock_immediately && v.Sen_Suppose_on_chain == 0 {
 						v.Sen_Suppose_on_chain = blockNumber
 					}
 					pool.Locking_TX_Pools[from] = append(pool.Locking_TX_Pools[from], v)
@@ -360,13 +364,13 @@ func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transact
 							v.LockTime = time.Now().UnixMilli()
 						}
 						v.RecLock = true
-						if config.Not_Lock_immediately && v.Rec_Suppose_on_chain==0{
+						if config.Not_Lock_immediately && v.Rec_Suppose_on_chain == 0 {
 							v.Rec_Suppose_on_chain = blockNumber
 						}
 						pool.Locking_TX_Pools[to] = append(pool.Locking_TX_Pools[to], v)
 						account.Lock_Acc_Lock.Unlock()
 						continue
-					}else {
+					} else {
 						encoded := v.Encode()
 						decoded := DecodeTx2(encoded)
 						// txs = append(txs, decoded)
@@ -378,7 +382,7 @@ func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transact
 							decoded.LockTime = time.Now().UnixMilli()
 						}
 						decoded.RecLock = true
-						if config.Not_Lock_immediately && decoded.Rec_Suppose_on_chain==0{
+						if config.Not_Lock_immediately && decoded.Rec_Suppose_on_chain == 0 {
 							decoded.Rec_Suppose_on_chain = blockNumber
 						}
 						decoded.Relay_Lock = true
@@ -397,7 +401,7 @@ func (pool *Tx_pool) FetchTxs2Pack(left_count, blockNumber int) (txs []*Transact
 						v.LockTime = time.Now().UnixMilli()
 					}
 					v.SenLock = true
-					if config.Not_Lock_immediately && v.Sen_Suppose_on_chain==0{
+					if config.Not_Lock_immediately && v.Sen_Suppose_on_chain == 0 {
 						v.Sen_Suppose_on_chain = blockNumber
 					}
 					pool.Outing_Before_Announce_TX_Pools[from] = append(pool.Outing_Before_Announce_TX_Pools[from], v)
@@ -427,7 +431,7 @@ func (pool *Tx_pool) LockTX() {
 
 		// MMM 拆分处理
 		mlen := len(tx.Recipient)
-		for i := 0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 			from, to := hex.EncodeToString(tx.Sender), hex.EncodeToString(tx.Recipient[i])
 			//全锁
 			if params.Config.Lock_Acc_When_Migrating {
@@ -502,14 +506,14 @@ func (pool *Tx_pool) LockTX() {
 func TxPoolDeepCopy(dst *[]*Transaction2, src []*Transaction2) {
 	for _, tx := range src {
 		*dst = append(*dst, &Transaction2{
-			Sender:               tx.Sender,
-			Recipient:            tx.Recipient,
-			TxHash:               tx.TxHash,
-			Id:                   tx.Id,
-			Success:              tx.Success,
-			IsRelay:              tx.IsRelay,
-			SenLock:              tx.SenLock,
-			RecLock:              tx.RecLock,
+			Sender:    tx.Sender,
+			Recipient: tx.Recipient,
+			TxHash:    tx.TxHash,
+			Id:        tx.Id,
+			Success:   tx.Success,
+			IsRelay:   tx.IsRelay,
+			SenLock:   tx.SenLock,
+			RecLock:   tx.RecLock,
 			// Value:                new(big.Int).Set(tx.Value),
 			Value:                tx.Value, // MMM
 			RequestTime:          tx.RequestTime,
@@ -525,4 +529,27 @@ func TxPoolDeepCopy(dst *[]*Transaction2, src []*Transaction2) {
 			Relay_Lock:           tx.Relay_Lock,
 		})
 	}
+}
+
+// [BANK SYSTEM] AddBankAggTxs adds aggregated transactions for an account to the pool
+func (pool *Tx_pool) AddBankAggTxs(addr string, txs []*Transaction2) {
+	pool.BankAggTX_Pools_Lock.Lock()
+	defer pool.BankAggTX_Pools_Lock.Unlock()
+	pool.BankAggTX_Pools[addr] = append(pool.BankAggTX_Pools[addr], txs...)
+}
+
+// [BANK SYSTEM] GetBankAggTxs retrieves and clears aggregated transactions for an account
+func (pool *Tx_pool) GetBankAggTxs(addr string) []*Transaction2 {
+	pool.BankAggTX_Pools_Lock.Lock()
+	defer pool.BankAggTX_Pools_Lock.Unlock()
+	txs := pool.BankAggTX_Pools[addr]
+	delete(pool.BankAggTX_Pools, addr)
+	return txs
+}
+
+// [BANK SYSTEM] ClearBankAggTxs clears aggregated transactions for an account
+func (pool *Tx_pool) ClearBankAggTxs(addr string) {
+	pool.BankAggTX_Pools_Lock.Lock()
+	defer pool.BankAggTX_Pools_Lock.Unlock()
+	delete(pool.BankAggTX_Pools, addr)
 }

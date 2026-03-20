@@ -221,6 +221,8 @@ func (p *Pbft) handleRequest(data []byte) {
 		go p.handleEpochChange()
 	case cBalanceAndPending:
 		p.handleBalancesAndPendings(content)
+	case cBankAggTX:
+		p.handleBankAggTX(content)
 	case cSure:
 		p.handleSure(content)
 	case cStop:

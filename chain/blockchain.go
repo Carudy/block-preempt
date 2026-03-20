@@ -386,6 +386,29 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 				account_state.Balance.Set(v.Value)
 				fmt.Printf("[BANK] Account %s balance set to: %v\n", v.Address, v.Value)
 				fmt.Printf("[BANK] ===== SETTLEMENT END =====\n")
+
+				// [BANK SYSTEM] Execute aggregated bank txs from BankAggTX_Pool
+				// These txs were received from source shard and stored in destination shard's pool
+				bankAggTxs := bc.Tx_pool.GetBankAggTxs(v.Address)
+				if len(bankAggTxs) > 0 {
+					fmt.Printf("[BANK] Executing %d aggregated bank txs for account %s\n", len(bankAggTxs), v.Address)
+					// Execute each aggregated bank tx
+					for _, bankTx := range bankAggTxs {
+						// Process each recipient in the aggregated tx
+						for i := 0; i < len(bankTx.Recipient); i++ {
+							r_addr := bankTx.Recipient[i]
+							r_state_enc := st.Get(r_addr)
+							if r_state_enc != nil {
+								r_state := account.DecodeAccountState(r_state_enc)
+								// Bank pays the recipient (Bank has unlimited balance, no deduction needed)
+								r_state.Balance.Add(r_state.Balance, bankTx.Value[i])
+								st.Update(r_addr, r_state.Encode())
+								fmt.Printf("[BANK] Bank paid %v to %s\n", bankTx.Value[i], hex.EncodeToString(r_addr))
+							}
+						}
+					}
+					fmt.Printf("[BANK] Finished executing aggregated bank txs for account %s\n", v.Address)
+				}
 			} else {
 				account_state.Balance.Set(v.Value)
 			}
@@ -397,9 +420,11 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 	}
 	mig2time := time.Now().UnixMicro() - mig2start
 
-	// [BANK SYSTEM] Process TXmig1s for balance mortgaging when EnableBank is true
+	// [BANK SYSTEM] Process TXmig1s for balance mortgaging and aggregation when EnableBank is true
 	// This happens after mig2s (incoming migrations) but before normal txs processing
-	// When an account triggers migration, it mortgages its balance to the bank as credit
+	// When an account triggers migration:
+	// 1. It mortgages its balance to the bank as credit (Step 2)
+	// 2. Aggregate pending payer txs and store in BankAggTX_Pool for sending to destination (Step 3)
 	if params.Config.Enable_bank {
 		for _, txmig1 := range mig1s {
 			hex_address, _ := hex.DecodeString(txmig1.Address)
@@ -408,10 +433,59 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 				account_state := account.DecodeAccountState(s_state_enc)
 				balance := new(big.Int).Set(account_state.Balance)
 				if balance.Cmp(big.NewInt(0)) > 0 {
-					// Mortgage the account's balance to the bank as credit
+					// Step 2: Mortgage the account's balance to the bank as credit
 					account.SetBankCreditLine(txmig1.Address, balance)
-					fmt.Printf("[BANK] Account %s mortgages balance %v to bank as credit (migration: %s -> %s)\n",
+					fmt.Printf("[BANK] Account %s mortgages balance %v to bank as credit (migration: %d -> %d)\n",
 						txmig1.Address, balance, txmig1.FromshardID, txmig1.ToshardID)
+
+					// Step 3: Aggregate pending payer txs for this migrating account
+					// Collect pending txs from Outing_Before_Announce_TX_Pools or Locking_TX_Pools
+					var pendingTxs []*core.Transaction2
+					if params.Config.Lock_Acc_When_Migrating {
+						account.Lock_Acc_Lock.Lock()
+						pendingTxs = bc.Tx_pool.Locking_TX_Pools[txmig1.Address]
+						delete(bc.Tx_pool.Locking_TX_Pools, txmig1.Address)
+						account.Lock_Acc_Lock.Unlock()
+					} else {
+						account.Outing_Acc_Before_Announce_Lock.Lock()
+						pendingTxs = bc.Tx_pool.Outing_Before_Announce_TX_Pools[txmig1.Address]
+						delete(bc.Tx_pool.Outing_Before_Announce_TX_Pools, txmig1.Address)
+						account.Outing_Acc_Before_Announce_Lock.Unlock()
+					}
+
+					// Aggregate pending txs (sender -> Bank) if any exist
+					if len(pendingTxs) > 0 {
+						// Calculate total value and create aggregated tx
+						totalValue := big.NewInt(0)
+						recipients := make([][]byte, 0)
+						values := make([]*big.Int, 0)
+
+						for _, tx := range pendingTxs {
+							for i := 0; i < len(tx.Recipient); i++ {
+								recipients = append(recipients, tx.Recipient[i])
+								values = append(values, tx.Value[i])
+								totalValue.Add(totalValue, tx.Value[i])
+							}
+						}
+
+						// Create aggregated tx with Bank as sender
+						aggTx := &core.Transaction2{
+							Sender:    []byte(account.BankAccountAddr),
+							Recipient: recipients,
+							Value:     values,
+						}
+
+						// Log aggregation details
+						fmt.Printf("[BANK] ========== AGGREGATION (mig1) ==========\n")
+						fmt.Printf("[BANK] Original Sender: %s\n", txmig1.Address)
+						fmt.Printf("[BANK] Number of Txs Aggregated: %d\n", len(pendingTxs))
+						fmt.Printf("[BANK] Total Value: %v\n", totalValue)
+						fmt.Printf("[BANK] New Sender: %s (Bank pays for migration)\n", account.BankAccountAddr)
+						fmt.Printf("[BANK] ==========================================\n")
+
+						// Store in BankAggTX_Pool for sending to destination shard
+						bc.Tx_pool.AddBankAggTxs(txmig1.Address, []*core.Transaction2{aggTx})
+					}
 				}
 			}
 		}

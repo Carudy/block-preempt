@@ -9,7 +9,7 @@ import (
 	"math/big"
 )
 
-//<REQUEST,o,t,c>
+// <REQUEST,o,t,c>
 type Request struct {
 	Message
 	Timestamp int64
@@ -20,7 +20,7 @@ type Message struct {
 	ID      int
 }
 
-//<<PRE-PREPARE,v,n,d>,m>
+// <<PRE-PREPARE,v,n,d>,m>
 type PrePrepare struct {
 	RequestMessage *Request
 	Digest         string
@@ -29,7 +29,7 @@ type PrePrepare struct {
 	// Sign           []byte
 }
 
-//<PREPARE,v,n,d,i>
+// <PREPARE,v,n,d,i>
 type Prepare struct {
 	Digest     string
 	SequenceID int
@@ -38,7 +38,7 @@ type Prepare struct {
 	// Sign       []byte
 }
 
-//<COMMIT,v,n,D(m),i>
+// <COMMIT,v,n,D(m),i>
 type Commit struct {
 	Digest     string
 	SequenceID int
@@ -61,7 +61,7 @@ type SendBlocks struct {
 	NodeID  string
 }
 
-//<REPLY,v,t,c,i,r>
+// <REPLY,v,t,c,i,r>
 type Reply struct {
 	MessageID int
 	NodeID    string
@@ -74,16 +74,16 @@ type Relay struct {
 }
 
 type TxFromClient struct {
-	Txs     []*core.Transaction2
+	Txs []*core.Transaction2
 }
 
 type Mig2 struct {
-	TXmig2s    []*core.TXmig2
+	TXmig2s []*core.TXmig2
 	ShardID string
 }
 
 type Announce struct {
-	TXanns   []*core.TXann
+	TXanns  []*core.TXann
 	ShardID string
 }
 
@@ -93,7 +93,7 @@ type ChangeAndPending struct {
 }
 
 type ChangesAndPendings struct {
-	TXnss   []*core.TXns    
+	TXnss   []*core.TXns
 	List    map[string]*ChangeAndPending
 	ShardID string
 }
@@ -109,13 +109,13 @@ type BalancesAndPendings struct {
 }
 
 type NaM struct {
-	New_Addrs  []string
+	New_Addrs      []string
 	New_Addr2shard map[string]int
 }
 
 type Txs_and_Num_of_New_State struct {
-	Txs []*core.Transaction2
-	BlockSize int
+	Txs              []*core.Transaction2
+	BlockSize        int
 	Num_of_New_State int
 }
 
@@ -154,7 +154,7 @@ const (
 
 	cClient   command = "client"
 	cRelay    command = "relay"
-	cTXmig1     command = "txmig1"
+	cTXmig1   command = "txmig1"
 	cAnnounce command = "announce"
 	cCaP      command = "csAps"
 
@@ -162,18 +162,19 @@ const (
 	cLLBlock command = "LLblock"
 	cLLT     command = "LLT"
 
-	cNewMap command = "newMap"
-	cEpochCh command = "epochchange"
-	cMigrateWanted command = "migwanted"
-	cPendingTXs command = "pendingTXs"
-	cNumOfMigratedTXsAddrs     command = "migTXsAddr#"
-	cUnchangedState     command = "#ofUnchange"
+	cNewMap                command = "newMap"
+	cEpochCh               command = "epochchange"
+	cMigrateWanted         command = "migwanted"
+	cPendingTXs            command = "pendingTXs"
+	cNumOfMigratedTXsAddrs command = "migTXsAddr#"
+	cUnchangedState        command = "#ofUnchange"
 
 	cBalanceAndPending command = "balance&TX"
-	cSure	command = "sure"
+	cSure              command = "sure"
+	cBankAggTX         command = "bankAggTX"
 )
 
-//默认前十二位为命令名称
+// 默认前十二位为命令名称
 func jointMessage(cmd command, content []byte) []byte {
 	b := make([]byte, prefixCMDLength)
 	for i, v := range []byte(cmd) {
@@ -184,7 +185,7 @@ func jointMessage(cmd command, content []byte) []byte {
 	return joint
 }
 
-//默认前十二位为命令名称
+// 默认前十二位为命令名称
 func splitMessage(message []byte) (cmd string, content []byte) {
 	cmdBytes := message[:prefixCMDLength]
 	newCMDBytes := make([]byte, 0)
@@ -198,7 +199,7 @@ func splitMessage(message []byte) (cmd string, content []byte) {
 	return
 }
 
-//对消息详情进行摘要
+// 对消息详情进行摘要
 func getDigest(request *Request) string {
 	b, err := json.Marshal(request)
 	if err != nil {
