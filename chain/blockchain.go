@@ -125,14 +125,19 @@ func NewBlockChain(chainConfig *params.ChainConfig) (*BlockChain, error) {
 	}
 	fmt.Println("The status trie can be built")
 
+	// [BANK SYSTEM] Initialize bank accounts if EnableBank is true
+	if chainConfig.Enable_bank {
+		account.InitializeBankAccounts()
+		fmt.Println("[BANK] Bank system initialized")
+	}
+
 	return bc, nil
 }
-
 
 // MMM 在pbftsingle中被调用
 // 本地化存储，修改内存、存储至硬盘。返回要迁出账户的余额
 func (bc *BlockChain) AddBlock(block *core.Block) map[string]*big.Int {
-	
+
 	utils.Mzlog("AddBlock! ")
 
 	iobegin := time.Now().UnixMilli()
@@ -151,7 +156,7 @@ func (bc *BlockChain) AddBlock(block *core.Block) map[string]*big.Int {
 
 	updatetree := time.Now().UnixMilli()
 	stateroothash, outbalance := bc.getUpdatedTreeOfState(1, block.Header.Number, block.Transactions, block.TXmig1s, block.TXmig2s, block.Anns, block.NSs)
-	if !bytes.Equal(block.Header.StateRoot, stateroothash){
+	if !bytes.Equal(block.Header.StateRoot, stateroothash) {
 		log.Panicf("二者不等，Ins长度为%v\n", len(block.TXmig2s))
 	}
 	fmt.Printf("更新树花时间为: %v\n", time.Now().UnixMilli()-updatetree)
@@ -295,10 +300,10 @@ func (bc *BlockChain) GenerateBlock(id int) *core.Block {
 		/// MMM 在这里处理交易
 
 		if params.Config.Algorithm || params.Config.Pressure {
-			txs, queueLen = bc.Tx_pool.FetchTxs2Pack(params.Config.MaxBlockSize - len(mig1s) - len(mig2s) - len(anns) - len(nss), bc.CurrentBlock.Header.Number + 1)
+			txs, queueLen = bc.Tx_pool.FetchTxs2Pack(params.Config.MaxBlockSize-len(mig1s)-len(mig2s)-len(anns)-len(nss), bc.CurrentBlock.Header.Number+1)
 		} else {
 			// MMM 走这边，把交易池交易取出来
-			txs, queueLen = bc.Tx_pool.FetchTxs2Pack(params.Config.MaxBlockSize - len(mig1s) - len(mig2s) - len(anns) - len(nss), bc.CurrentBlock.Header.Number + 1)
+			txs, queueLen = bc.Tx_pool.FetchTxs2Pack(params.Config.MaxBlockSize-len(mig1s)-len(mig2s)-len(anns)-len(nss), bc.CurrentBlock.Header.Number+1)
 			// txs = bc.Tx_pool.FetchTxs2Pack(params.Config.MaxBlockSize - params.Config.MaxMigSize + quota)
 		}
 	}
@@ -325,13 +330,13 @@ func (bc *BlockChain) GenerateBlock(id int) *core.Block {
 	if !params.Config.Stop_When_Migrating {
 		if !params.Config.Lock_Acc_When_Migrating {
 			account.Outing_Acc_Before_Announce_Lock.Lock()
-			for _,lockedtxs := range bc.Tx_pool.Outing_Before_Announce_TX_Pools {
+			for _, lockedtxs := range bc.Tx_pool.Outing_Before_Announce_TX_Pools {
 				queueLen += len(lockedtxs)
 			}
 			account.Outing_Acc_Before_Announce_Lock.Unlock()
-		}else {
+		} else {
 			account.Lock_Acc_Lock.Lock()
-			for _,lockedtxs := range bc.Tx_pool.Locking_TX_Pools {
+			for _, lockedtxs := range bc.Tx_pool.Locking_TX_Pools {
 				queueLen += len(lockedtxs)
 			}
 			account.Lock_Acc_Lock.Unlock()
@@ -364,13 +369,53 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 				log.Panic()
 			}
 			account_state := account.DecodeAccountState(s_state_enc)
-			account_state.Balance.Set(v.Value)
+
+			// [BANK SYSTEM] Cross-shard balance settlement
+			// When EnableBank is true, the bank in destination shard returns remaining balance to migrated account
+			// Note: For minimal implementation, we use v.Value directly as the remaining balance
+			// The credit line tracking across shards is simplified for proof-of-concept
+			if params.Config.Enable_bank {
+				fmt.Printf("[BANK] ===== SETTLEMENT START =====\n")
+				fmt.Printf("[BANK] Migrated Account: %s\n", v.Address)
+				if v.Txmig1 != nil {
+					fmt.Printf("[BANK] From Shard: %d -> To Shard: %d\n", v.Txmig1.FromshardID, v.Txmig1.ToshardID)
+				} else {
+					fmt.Printf("[BANK] From Shard: N/A -> To Shard: N/A (TXmig1 is nil)\n")
+				}
+				fmt.Printf("[BANK] Settlement Balance (from v.Value): %v\n", v.Value)
+				account_state.Balance.Set(v.Value)
+				fmt.Printf("[BANK] Account %s balance set to: %v\n", v.Address, v.Value)
+				fmt.Printf("[BANK] ===== SETTLEMENT END =====\n")
+			} else {
+				account_state.Balance.Set(v.Value)
+			}
+
 			account_state.Migrate = -1
 			account_state.Location = params.ShardTable[bc.ChainConfig.ShardID]
 			st.Update(hex_address, account_state.Encode())
 		}
 	}
 	mig2time := time.Now().UnixMicro() - mig2start
+
+	// [BANK SYSTEM] Process TXmig1s for balance mortgaging when EnableBank is true
+	// This happens after mig2s (incoming migrations) but before normal txs processing
+	// When an account triggers migration, it mortgages its balance to the bank as credit
+	if params.Config.Enable_bank {
+		for _, txmig1 := range mig1s {
+			hex_address, _ := hex.DecodeString(txmig1.Address)
+			s_state_enc := st.Get(hex_address)
+			if s_state_enc != nil {
+				account_state := account.DecodeAccountState(s_state_enc)
+				balance := new(big.Int).Set(account_state.Balance)
+				if balance.Cmp(big.NewInt(0)) > 0 {
+					// Mortgage the account's balance to the bank as credit
+					account.SetBankCreditLine(txmig1.Address, balance)
+					fmt.Printf("[BANK] Account %s mortgages balance %v to bank as credit (migration: %s -> %s)\n",
+						txmig1.Address, balance, txmig1.FromshardID, txmig1.ToshardID)
+				}
+			}
+		}
+	}
 
 	// stateTree := bc.preExecute(txs)
 	outbalance := make(map[string]*big.Int)
@@ -379,23 +424,30 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 	for _, tx := range txs {
 		/// MMM 拆分处理
 		mlen := len(tx.Recipient)
-		for i := 0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 
 			// 确保发送地址属于此分片，即此交易不是其它分片发来的relay交易
 			// if account.Addr2Shard(hex.EncodeToString(tx.Sender)) == params.ShardTable[bc.ChainConfig.ShardID] {
 			if !tx.IsRelay && !tx.Relay_Lock {
-				s_state_enc := st.Get(tx.Sender)
-				if s_state_enc == nil {
-					fmt.Printf("sender属于该分片吗：%v\n", account.AccountInOwnShard[hex.EncodeToString(tx.Sender)])
-					fmt.Printf("sender地址为：%v\n", hex.EncodeToString(tx.Sender))
-					fmt.Printf("sender属于分片：%v\n", account.Account2Shard[hex.EncodeToString(tx.Sender)])
-					fmt.Printf("rec地址为：%v\n", hex.EncodeToString(tx.Recipient[i]))
-					fmt.Printf("rec属于分片：%v\n", account.Account2Shard[hex.EncodeToString(tx.Recipient[i])])
-					log.Panic()
+				// [BANK SYSTEM] When sender is Bank, skip sender state processing (Bank has unlimited balance)
+				// Use bytes.Equal to compare raw bytes instead of hex encoding (Step 3 sets sender as []byte("BANK"))
+				if params.Config.Enable_bank && bytes.Equal(tx.Sender, []byte(account.BankAccountAddr)) {
+					fmt.Printf("[BANK] [TxID:%d] BANK PAYMENT: Bank -> %s, Value: %v (Bank has unlimited balance, no sender state needed)\n",
+						tx.Id, hex.EncodeToString(tx.Recipient[i]), tx.Value[i])
+				} else {
+					s_state_enc := st.Get(tx.Sender)
+					if s_state_enc == nil {
+						fmt.Printf("sender属于该分片吗：%v\n", account.AccountInOwnShard[hex.EncodeToString(tx.Sender)])
+						fmt.Printf("sender地址为：%v\n", hex.EncodeToString(tx.Sender))
+						fmt.Printf("sender属于分片：%v\n", account.Account2Shard[hex.EncodeToString(tx.Sender)])
+						fmt.Printf("rec地址为：%v\n", hex.EncodeToString(tx.Recipient[i]))
+						fmt.Printf("rec属于分片：%v\n", account.Account2Shard[hex.EncodeToString(tx.Recipient[i])])
+						log.Panic()
+					}
+					account_state := account.DecodeAccountState(s_state_enc)
+					account_state.Balance.Sub(account_state.Balance, tx.Value[i])
+					st.Update(tx.Sender, account_state.Encode())
 				}
-				account_state := account.DecodeAccountState(s_state_enc)
-				account_state.Balance.Sub(account_state.Balance, tx.Value[i])
-				st.Update(tx.Sender, account_state.Encode())
 			}
 			r_state_enc := st.Get(tx.Recipient[i])
 			if r_state_enc == nil {
@@ -410,7 +462,7 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 			if account_state.Location != params.ShardTable[bc.ChainConfig.ShardID] {
 				continue
 				// 接收者为锁定账户，不对该状态进行修改
-			} else if account_state.Migrate != -1 && params.Config.Lock_Acc_When_Migrating{
+			} else if account_state.Migrate != -1 && params.Config.Lock_Acc_When_Migrating {
 				continue
 			}
 
@@ -429,7 +481,6 @@ func (bc *BlockChain) getUpdatedTreeOfState(commit int, height int, txs []*core.
 			// 	account.Lock_Acc_Lock.Unlock()
 			// }
 
-			
 			account_state.Balance.Add(account_state.Balance, tx.Value[i])
 			if commit == 1 && account_state.Migrate != -1 {
 				tx.HalfLock = true

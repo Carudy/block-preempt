@@ -2,11 +2,11 @@
 
 ./clean.sh
 # Configuration variables - edit these as needed
+enable_bank=true
 num_shards=2
 num_nodes=16
 malicious_num=1
 inject_speed=500
-enbale_bank=false
 
 if [ "$enable_bank" = "true" ]; then
     echo "BANK enabled."

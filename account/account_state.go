@@ -12,6 +12,9 @@ import (
 	"sync"
 )
 
+// Bank account identifier (unique identifier for bank accounts in all shards)
+const BankAccountAddr = "BANK"
+
 // StateAccount is the Ethereum consensus representation of accounts.
 // These objects are stored in the main account trie.
 type AccountState struct {
@@ -19,43 +22,82 @@ type AccountState struct {
 	Balance *big.Int
 	// Root     []byte // merkle root of the storage trie
 	// CodeHash []byte
-	Migrate int
+	Migrate  int
 	Location int
 }
 
 var Account2ShardLock sync.Mutex
 
-//  账户到分片的映射
+// 账户到分片的映射
 var Account2Shard map[string]int
 
-//  本分片的账户
+// 本分片的账户
 var AccountInOwnShard map[string]bool
 
 var BalanceBeforeOutLock sync.Mutex
 
-//  正在迁出的账户在Out1时的余额
+// 正在迁出的账户在Out1时的余额
 var BalanceBeforeOut map[string]*big.Int
 
 var ComingAccountLock sync.Mutex
 
-
 var Outing_Acc_Before_Announce_Lock sync.Mutex
 
-//  正在迁出且已经还没到Announce的账户，交易池中这类账户发起的交易不会被打包，而是到专门的内存Outing_TX中
+// 正在迁出且已经还没到Announce的账户，交易池中这类账户发起的交易不会被打包，而是到专门的内存Outing_TX中
 var Outing_Acc_Before_Announce map[string]bool
-
 
 var Outing_Acc_After_Announce_Lock sync.Mutex
 
-//  正在迁出且已经收到Announce的账户，这类账户的交易不会进入交易池，而是到专门的内存Outing_TX中
+// 正在迁出且已经收到Announce的账户，这类账户的交易不会进入交易池，而是到专门的内存Outing_TX中
 var Outing_Acc_After_Announce map[string]bool
 
 var Lock_Acc_Lock sync.Mutex
 
-//  迁出账户要对账户锁
+// 迁出账户要对账户锁
 var Lock_Acc map[string]bool
 
-//  根据账户地址的出所在分片。若是旧账户
+// Bank Credit Lines: tracks credit issued to migrating accounts (account addr -> credit amount)
+// Initialize at declaration to prevent nil map panic
+var BankCreditLines = make(map[string]*big.Int)
+var BankCreditLinesLock sync.Mutex
+
+// InitializeBankAccounts sets up bank-related global structures
+func InitializeBankAccounts() {
+	BankCreditLines = make(map[string]*big.Int)
+	// Bank has unlimited balance, so no initialization needed for its own state
+	// It exists in all shards but never migrates
+}
+
+// IsBankAccount checks if the given address is the bank account
+func IsBankAccount(addr string) bool {
+	return addr == BankAccountAddr
+}
+
+// GetBankCreditLine returns the credit line for a given account
+func GetBankCreditLine(accountAddr string) *big.Int {
+	BankCreditLinesLock.Lock()
+	defer BankCreditLinesLock.Unlock()
+	if credit, exists := BankCreditLines[accountAddr]; exists {
+		return new(big.Int).Set(credit)
+	}
+	return big.NewInt(0)
+}
+
+// SetBankCreditLine sets or updates the credit line for a given account
+func SetBankCreditLine(accountAddr string, amount *big.Int) {
+	BankCreditLinesLock.Lock()
+	defer BankCreditLinesLock.Unlock()
+	BankCreditLines[accountAddr] = new(big.Int).Set(amount)
+}
+
+// ClearBankCreditLine removes the credit line for a given account (after settlement)
+func ClearBankCreditLine(accountAddr string) {
+	BankCreditLinesLock.Lock()
+	defer BankCreditLinesLock.Unlock()
+	delete(BankCreditLines, accountAddr)
+}
+
+// 根据账户地址的出所在分片。若是旧账户
 func Addr2Shard(senderAddr string) int {
 	Account2ShardLock.Lock()
 	if shardID, ok := Account2Shard[senderAddr]; ok {

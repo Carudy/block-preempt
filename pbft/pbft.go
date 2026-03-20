@@ -130,7 +130,6 @@ func NewPBFT() *Pbft {
 	return p
 }
 
-
 // MMM 初始化log文件夹中的文件
 func NewLog(shardID string) {
 	csvFile, err := os.Create("./log/" + shardID + "_block.csv")
@@ -139,7 +138,7 @@ func NewLog(shardID string) {
 	}
 	// defer csvFile.Close()
 	blocklog = csv.NewWriter(csvFile)
-	blocklog.Write([]string{"timestamp", "blockHeight", "tx_total", "tx_normal", "tx_relay_sender", "tx_relay_receiver", "tx_committed", "pbfttime", "mig1", "mig2", "ann", "ns", "locked_txs" , "real_tx_total"})
+	blocklog.Write([]string{"timestamp", "blockHeight", "tx_total", "tx_normal", "tx_relay_sender", "tx_relay_receiver", "tx_committed", "pbfttime", "mig1", "mig2", "ann", "ns", "locked_txs", "real_tx_total"})
 	blocklog.Flush()
 
 	csvFile, err = os.Create("./log/" + shardID + "_blockexetime.csv")
@@ -191,7 +190,6 @@ func (p *Pbft) handleRequest(data []byte) {
 	//切割消息，根据消息命令调用不同的功能
 
 	//utils.Mzlog("call handleRequest")
-
 
 	cmd, content := splitMessage(data)
 	switch command(cmd) {
@@ -412,8 +410,6 @@ func (p *Pbft) handleCommit(content []byte) {
 	}
 	pbftType := c.Type
 
-
-	
 	fmt.Printf("本节点已接收到%s节点发来的Commit ... \n", c.NodeID)
 
 	// if _, ok := p.prePareConfirmCount[c.Digest]; !ok {
@@ -486,7 +482,7 @@ func (p *Pbft) handleCommit(content []byte) {
 					for _, v := range block.Transactions {
 
 						mlen := len(v.Recipient)
-						for i := 0; i < mlen; i ++{
+						for i := 0; i < mlen; i++ {
 
 							_, toid := account.Addr2Shard(hex.EncodeToString(v.Sender)), account.Addr2Shard(hex.EncodeToString(v.Recipient[i]))
 							//若交易接收者属于本分片才加入已上链交易集
@@ -548,7 +544,7 @@ func (p *Pbft) handleCommit(content []byte) {
 							} else if toid != params.ShardTable[params.Config.ShardID] {
 
 								// MMM 不属于当前分片，发送relay交易
-								
+
 								relayCount++
 								v.IsRelay = true
 								relaytxs = append(relaytxs, v)
@@ -1024,7 +1020,7 @@ func (p *Pbft) TryRelay(relaytxs, alltxs []*core.Transaction2, st *trie.Trie, nu
 	relaypool := make([][]*core.TXrelay, config.Shard_num)
 	for _, v := range relaytxs {
 		mlen := len(v.Recipient)
-		for i:=0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 
 			shardID := account.Addr2Shard(hex.EncodeToString(v.Recipient[i]))
 			proofDB1 := &core.ProofDB{}
@@ -1072,7 +1068,7 @@ func (p *Pbft) TryRelay2(relaytxs []*core.TXrelay) {
 	relaypool := make([][]*core.TXrelay, config.Shard_num)
 	for _, v := range relaytxs {
 		mlen := len(v.Txcs.Recipient)
-		for i := 0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 			shardID := account.Addr2Shard(hex.EncodeToString(v.Txcs.Recipient[i]))
 			relaypool[shardID] = append(relaypool[shardID], v)
 		}
@@ -1090,7 +1086,7 @@ func (p *Pbft) TryRelay2(relaytxs []*core.TXrelay) {
 				ShardID: config.ShardID,
 			}
 			utils.Mzlog("!!! tryrelay2 start!!!")
-			bc, err := json.Marshal(r)   // MMMM 这里可能出问题
+			bc, err := json.Marshal(r) // MMMM 这里可能出问题
 			utils.Mzlog(fmt.Sprintf("!!! tryrelay2 result: %v", len(bc)))
 			if err != nil {
 				log.Panic(err)
@@ -1147,11 +1143,11 @@ func (p *Pbft) handleRelay(content []byte) {
 	p.Node.CurChain.Tx_pool.Relaypoollock.Lock()
 	txcss := make([]*core.Transaction2, 0)
 	for _, tx := range relay.Txs {
-		txcs := tx.Txcs   // MMM 取交易
+		txcs := tx.Txcs // MMM 取交易
 
 		// MMM 下面的代码由bug，会重复tx
 		mlen := len(txcs.Recipient)
-		for i := 0; i < mlen; i ++{
+		for i := 0; i < mlen; i++ {
 			target_shardID := account.Addr2Shard(hex.EncodeToString(txcs.Recipient[i]))
 			account.Lock_Acc_Lock.Lock()
 			if !params.Config.Not_Lock_immediately && account.Lock_Acc[hex.EncodeToString(txcs.Recipient[i])] {
@@ -1171,10 +1167,10 @@ func (p *Pbft) handleRelay(content []byte) {
 			if target_shardID == self_shardID {
 				txcss = append(txcss, txcs)
 				txcs.Second_RequestTime = time.Now().UnixMilli()
-				break  // MMM 这里需要跳出循环确保只添加一次
+				break // MMM 这里需要跳出循环确保只添加一次
 			} else {
-				relaytx2 = append(relaytx2, tx)   // MMM 添加relay交易
-				break   // MMM 这里需要跳出循环确保只添加一次
+				relaytx2 = append(relaytx2, tx) // MMM 添加relay交易
+				break                           // MMM 这里需要跳出循环确保只添加一次
 			}
 		}
 	}
@@ -1255,7 +1251,6 @@ func (p *Pbft) TryTXmig1(txmig1s []*core.TXmig1, outbalance map[string]*big.Int,
 func (p *Pbft) handleMig2(content []byte) {
 
 	utils.Mzlog("call handleMig2")
-
 
 	mig2 := new(Mig2)
 	err := json.Unmarshal(content, mig2)
@@ -1598,29 +1593,28 @@ func (p *Pbft) TrySendChangesAndPendings(nss []*core.TXns, caps map[string]*Chan
 	target_leader := params.NodeTable[target_shardID]["N0"]
 	// MMM 对caps交易进行聚合处理
 	/*
-	type ChangeAndPending struct {
-		Change     float64
-		PendingTxs []*core.Transaction2
-	}
+		type ChangeAndPending struct {
+			Change     float64
+			PendingTxs []*core.Transaction2
+		}
 	*/
 	Joint := true // MMM 聚合开关
 
 	// 测试聚合带宽用
 	old_ret, _ := json.Marshal(caps)
 	ttotal_num := 0 // MMM 统计聚合交易数量
-	if Joint{
-		
-		for k, _ := range caps{
+	if Joint {
+
+		for k, _ := range caps {
 			tmp_len := len(caps[k].PendingTxs)
-        	
-        	
+
 			// MMM 超过一笔交易，可以聚合
-			if len(caps[k].PendingTxs) > 1{
-				ttotal_num += tmp_len   // MMM 统计聚合交易数量
+			if len(caps[k].PendingTxs) > 1 {
+				ttotal_num += tmp_len // MMM 统计聚合交易数量
 
 				for _, tx := range caps[k].PendingTxs[1:] {
 					mlen := len(tx.Recipient)
-					for j := 0 ; j < mlen; j ++{
+					for j := 0; j < mlen; j++ {
 						caps[k].PendingTxs[0].Recipient = append(caps[k].PendingTxs[0].Recipient, tx.Recipient[j])
 						caps[k].PendingTxs[0].Value = append(caps[k].PendingTxs[0].Value, tx.Value[j])
 					}
@@ -1629,7 +1623,7 @@ func (p *Pbft) TrySendChangesAndPendings(nss []*core.TXns, caps map[string]*Chan
 				new_txs := make([]*core.Transaction2, 0)
 				new_txs = append(new_txs, caps[k].PendingTxs[0])
 				caps[k].PendingTxs = new_txs
-			}	
+			}
 		}
 
 		// mtest, _ := json.Marshal(caps)
@@ -1639,14 +1633,48 @@ func (p *Pbft) TrySendChangesAndPendings(nss []*core.TXns, caps map[string]*Chan
 	}
 	// MMM 聚合处理完成
 
+	// [BANK SYSTEM] When EnableBank is true, change the sender of aggregated txs to Bank
+	// Original txs from migrating account A: <A-100->r1>, <A-500->r2>
+	// After aggregation (without bank): <A-100,500->[r1,r2]>
+	// With bank enabled: <Bank-100,500->[r1,r2]>
+	if params.Config.Enable_bank {
+		for k := range caps {
+			if len(caps[k].PendingTxs) > 0 {
+				// Calculate total value for detailed logging
+				totalValue := big.NewInt(0)
+				for _, v := range caps[k].PendingTxs[0].Value {
+					totalValue.Add(totalValue, v)
+				}
+
+				// Log detailed aggregation information
+				fmt.Printf("[BANK] ========== AGGREGATION SUMMARY ==========\n")
+				fmt.Printf("[BANK] Original Sender: %s\n", k)
+				fmt.Printf("[BANK] Number of Txs Aggregated: %d\n", len(caps[k].PendingTxs[0].Value))
+				fmt.Printf("[BANK] Total Value: %v\n", totalValue)
+				fmt.Printf("[BANK] Recipients (%d): ", len(caps[k].PendingTxs[0].Recipient))
+				for i, recip := range caps[k].PendingTxs[0].Recipient {
+					if i < 3 {
+						fmt.Printf("%s(%v) ", hex.EncodeToString(recip), caps[k].PendingTxs[0].Value[i])
+					} else if i == 3 {
+						fmt.Printf("... (and %d more)", len(caps[k].PendingTxs[0].Recipient)-3)
+					}
+				}
+				fmt.Printf("\n")
+
+				// Change sender from original migrating account to Bank
+				caps[k].PendingTxs[0].Sender = []byte(account.BankAccountAddr)
+				fmt.Printf("[BANK] New Sender: %s (Bank pays for migration)\n", account.BankAccountAddr)
+				fmt.Printf("[BANK] ==========================================\n")
+			}
+		}
+	}
+
 	// 计算发送的流量大小变化
 	new_ret, _ := json.Marshal(caps)
 	old_len := len(string(old_ret))
 	new_len := len(string(new_ret))
-	ftmp := float64(new_len)/float64(old_len)
+	ftmp := float64(new_len) / float64(old_len)
 	utils.Mzlog(fmt.Sprintf("[liuliang] (%v) %v/%v=%v ", ttotal_num, new_len, old_len, ftmp))
-
-
 
 	cp := ChangesAndPendings{
 		TXnss:   nss,
@@ -1655,7 +1683,6 @@ func (p *Pbft) TrySendChangesAndPendings(nss []*core.TXns, caps map[string]*Chan
 	}
 
 	bc, err := json.Marshal(cp)
-
 
 	// MMM 查看序列化结果
 	utils.Mzlog(fmt.Sprintf("TrySendChangesAndPendings: len: %v", len(bc)))
@@ -1671,15 +1698,13 @@ func (p *Pbft) TrySendChangesAndPendings(nss []*core.TXns, caps map[string]*Chan
 
 }
 
-
-
 // MMM 进行迁移处理
 func (p *Pbft) handleChangesAndPendings(content []byte) {
 	fmt.Printf("时间：%v  本节点已接收到新\n", time.Now().UnixMilli())
 
 	utils.Mzlog(fmt.Sprintf(" >>> 收到ChangesAndPendings, 长度: %v ", len(content)))
 	caps := new(ChangesAndPendings)
-	err := json.Unmarshal(content, caps)    // 这里可能会有问题
+	err := json.Unmarshal(content, caps) // 这里可能会有问题
 	if err != nil {
 		log.Panic(err)
 	}
