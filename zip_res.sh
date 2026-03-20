@@ -7,8 +7,9 @@ if grep -q 'enable_bank=true' ./run.sh; then
 else
     zip_tar="res_caravan_${datetime}.zip"
 fi
+
 echo 'ziping ' $zip_tar
-rm -f ./$zip_tar
-zip -r $zip_tar log
-cp ./$zip_tar /disc/home/dy/caddy/site
+zip -r results/$zip_tar log
+
+cp ./results/$zip_tar /disc/home/dy/caddy/site
 echo 'copyed ' $zip_tar 'to download site'
